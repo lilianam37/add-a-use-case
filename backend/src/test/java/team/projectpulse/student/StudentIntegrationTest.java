@@ -3,6 +3,7 @@ package team.projectpulse.student;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.system.StatusCode;
+import team.projectpulse.user.UserRepository;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Student API endpoints")
 class StudentIntegrationTest extends AbstractIntegrationTest {
@@ -35,6 +37,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     JsonMapper jsonMapper;
+
+    @Autowired
+    UserRepository userRepository;
 
     String adminToken;
 
@@ -305,6 +310,49 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN))
                 .andExpect(jsonPath("$.message").value("No permission."))
                 .andExpect(jsonPath("$.data").value("Access Denied"));
+    }
+
+
+    // UC-STU-deactivate-student, extension 6a: the route guard refuses before the service runs.
+
+    private void expectDeactivateForbidden(Object studentId, String token) throws Exception {
+        this.mockMvc.perform(patch(this.baseUrl + "/students/" + studentId + "/deactivate").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN));
+    }
+
+    private Integer idOf(String username) {
+        return this.userRepository.findByUsername(username).orElseThrow().getId();
+    }
+
+    @Test
+    void testInstructorOfAnotherCourseSectionCannotDeactivateStudent() throws Exception {
+        // Bill teaches course 1's course sections; Jana is in course 3's EE Capstone 2024
+        expectDeactivateForbidden(idOf("j.norton@abc.edu"), this.instructorBillToken);
+    }
+
+    @Test
+    void testAdminOfAnotherCourseCannotDeactivateStudent() throws Exception {
+        // Tim administers course 3; John is in course 1
+        expectDeactivateForbidden(4, this.adminTimToken);
+    }
+
+    @Test
+    void testStudentCannotDeactivateHerself() throws Exception {
+        expectDeactivateForbidden(4, this.studentJohnToken);
+    }
+
+    @Test
+    void testStudentCannotDeactivateAnotherStudent() throws Exception {
+        expectDeactivateForbidden(5, this.studentJohnToken);
+    }
+
+    @Test
+    void testDeactivateIdNamingNoStudentIsForbidden() throws Exception {
+        expectDeactivateForbidden(9999, this.adminToken);
+        // An instructor's id names no student either
+        expectDeactivateForbidden(idOf("b.gates@abc.edu"), this.adminToken);
     }
 
 }
