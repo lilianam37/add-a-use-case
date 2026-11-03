@@ -1529,6 +1529,8 @@ Details:
 
 **Associated Information:**
 - The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
+- Until this use case is built there is no way to reactivate a student: deactivation goes only through UC-STU-deactivate-student, and the generic student edit no longer changes whether an account is active (OI-65).
+- A reactivated student returns to whatever team she is on at that time (BR-deactivation-retains-team).
 
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-deactivate-student: Deactivate a student
 **Assumptions:**
