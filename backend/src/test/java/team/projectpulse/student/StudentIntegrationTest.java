@@ -3,6 +3,9 @@ package team.projectpulse.student;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.system.StatusCode;
+import team.projectpulse.instructor.Instructor;
+import team.projectpulse.section.Section;
+import team.projectpulse.section.SectionRepository;
 import team.projectpulse.user.UserRepository;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
@@ -22,6 +25,7 @@ import org.springframework.util.MultiValueMap;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -40,6 +44,12 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    StudentRepository studentRepository;
+
+    @Autowired
+    SectionRepository sectionRepository;
 
     String adminToken;
 
@@ -353,6 +363,83 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
         expectDeactivateForbidden(9999, this.adminToken);
         // An instructor's id names no student either
         expectDeactivateForbidden(idOf("b.gates@abc.edu"), this.adminToken);
+    }
+
+    // UC-STU-deactivate-student: main flow, POST-2, extension 3a, and the generic PUT no longer writing enabled.
+
+    private void expectDeactivated(Object studentId, String token) throws Exception {
+        this.mockMvc.perform(patch(this.baseUrl + "/students/" + studentId + "/deactivate").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.message").value("Deactivate student successfully"))
+                .andExpect(jsonPath("$.data.id").value(studentId))
+                .andExpect(jsonPath("$.data.enabled").value(false));
+    }
+
+    @Test
+    void testInstructorBillDeactivatesStudentOfHisCourseSection() throws Exception {
+        expectDeactivated(4, this.instructorBillToken);
+
+        // She can no longer log in
+        this.mockMvc.perform(post(this.baseUrl + "/users/login").with(httpBasic("j.smith@abc.edu", "123456")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.UNAUTHORIZED));
+
+        // Her team assignment is kept (BR-deactivation-retains-team)
+        assertThat(this.studentRepository.findById(4).orElseThrow().getTeam()).isNotNull();
+    }
+
+    @Test
+    void testDeactivatedStudentsLiveTokenIsRefused() throws Exception {
+        // POST-2: John's token was issued before the deactivation
+        expectDeactivated(4, this.instructorBillToken);
+
+        this.mockMvc.perform(get(this.baseUrl + "/students/4").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(StatusCode.UNAUTHORIZED));
+    }
+
+    @Test
+    void testCourseAdminNotAssignedToTheCourseSectionDeactivatesStudent() throws Exception {
+        // Tim administers course 3; take him off its EE Capstone 2024 course section so only the course-admin
+        // scope can admit him. The test transaction rolls this back.
+        Integer janaId = idOf("j.norton@abc.edu");
+        Section eeCapstone = this.studentRepository.findById(janaId).orElseThrow().getSection();
+        Instructor tim = (Instructor) this.userRepository.findByUsername("t.cook@abc.edu").orElseThrow();
+        eeCapstone.removeInstructor(tim);
+        this.sectionRepository.saveAndFlush(eeCapstone);
+
+        expectDeactivated(janaId, this.adminTimToken);
+    }
+
+    @Test
+    void testDeactivateStudentWhoIsAlreadyDeactivated() throws Exception {
+        expectDeactivated(4, this.instructorBillToken);
+
+        this.mockMvc.perform(patch(this.baseUrl + "/students/4/deactivate").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.CONFLICT))
+                .andExpect(jsonPath("$.message").value("This student is already deactivated."));
+
+        assertThat(this.studentRepository.findById(4).orElseThrow().isEnabled()).isFalse();
+    }
+
+    @Test
+    void testInstructorPutCannotDeactivateStudent() throws Exception {
+        Map<String, Object> studentDto = new HashMap<>();
+        studentDto.put("username", "j.smith@abc.edu");
+        studentDto.put("firstName", "John");
+        studentDto.put("lastName", "Smith");
+        studentDto.put("email", "j.smith@abc.edu");
+        studentDto.put("enabled", false);
+
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(studentDto)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.data.enabled").value(true));
     }
 
 }

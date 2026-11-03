@@ -48,6 +48,17 @@
             type="primary"
             @click.stop="showEditStudentDialog(row)"
           ></el-button>
+          <!-- Offered only to an active student (UC-STU-deactivate-student, extension 3a) -->
+          <el-button
+            v-if="row.enabled"
+            icon="SwitchButton"
+            circle
+            plain
+            type="danger"
+            title="Deactivate"
+            aria-label="Deactivate"
+            @click.stop="confirmDeactivateStudent(row)"
+          ></el-button>
         </template>
       </el-table-column>
       <template #empty>
@@ -77,8 +88,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { searchStudents } from '@/apis/student'
+import { h, onMounted, ref } from 'vue'
+import { deactivateStudent, searchStudents } from '@/apis/student'
 import type {
   SearchStudentByCriteriaResponse,
   Student,
@@ -86,7 +97,7 @@ import type {
 } from '@/apis/student/types'
 import { useSettingsStore } from '@/stores/settings'
 import EditStudentForm from './EditStudentForm.vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const searchCriteria = ref<StudentSearchCriteria>({
   sectionId: NaN,
@@ -162,6 +173,51 @@ function showEditStudentDialog(student: Student) {
 function closeDialog() {
   dialogVisible.value = false
   loadStudents()
+}
+
+// UC-STU-deactivate-student: warn about the consequences (step 4), then deactivate on confirmation (steps 5-6).
+// Cancelling sends nothing (extension 5a).
+async function confirmDeactivateStudent(student: Student) {
+  const name = `${student.firstName} ${student.lastName}`
+  try {
+    await ElMessageBox.confirm(
+      h('div', null, [
+        h('p', null, `Deactivate ${name}?`),
+        h('ul', { style: 'padding-left: 20px; margin: 8px 0' }, [
+          h(
+            'li',
+            null,
+            'They will no longer be able to log in or submit weekly activity reports and peer evaluations.'
+          ),
+          h('li', null, 'Their account and previously submitted work are kept in the system.'),
+          h(
+            'li',
+            null,
+            'They are not removed from the system, and the account can be reactivated later.'
+          ),
+          h(
+            'li',
+            null,
+            'This is not deletion. Deleting a student is permanent and cannot be undone.'
+          )
+        ])
+      ]),
+      'Deactivate student',
+      { confirmButtonText: 'Deactivate', cancelButtonText: 'Cancel', type: 'warning' }
+    )
+  } catch {
+    return // Cancelled: the student's account is unchanged
+  }
+
+  try {
+    await deactivateStudent(student.id as number)
+    ElMessage.success(`${name} has been deactivated.`)
+    loadStudents()
+  } catch (error: any) {
+    // request.ts has already told the user why: a 403 goes to the Forbidden page (extension 6a), and any other
+    // error is toasted. A 409 means the page was out of date (extension 3a), so reload it.
+    if (error?.response?.status === 409) loadStudents()
+  }
 }
 
 import { useRouter } from 'vue-router'

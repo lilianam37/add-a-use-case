@@ -179,6 +179,12 @@ public class ExceptionHandlerAdvice {
         return new Result(false, StatusCode.INVALID_ARGUMENT, "The request is malformed.");
     }
 
+    @ExceptionHandler(StudentAlreadyDeactivatedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    Result handleStudentAlreadyDeactivatedException(StudentAlreadyDeactivatedException ex) {
+        return new Result(false, StatusCode.CONFLICT, ex.getMessage());
+    }
+
     @ExceptionHandler(SectionAlreadyLockedException.class)
     @ResponseStatus(HttpStatus.LOCKED)
     Result handleSectionAlreadyLockedException(SectionAlreadyLockedException ex) {
