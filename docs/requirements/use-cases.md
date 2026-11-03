@@ -1462,6 +1462,7 @@ Details:
 
 **Postconditions:**
 - POST-1. The student's account is deactivated.
+- POST-2. The student immediately loses access to protected resources, including through a token issued before the deactivation (FR-SEC-active-account).
 
 **Main Success Scenario:**
 1. The course admin or instructor indicates to deactivate a student.
@@ -1479,6 +1480,7 @@ Details:
 
 **Associated Information:**
 - Consequence of the deactivation: The student will no longer be able to log in or submit weekly activity reports and peer evaluations, but the student's account and her previously submitted work are kept in the system. Deactivation will NOT remove the student from the system, and the account can be reactivated in the future (UC-STU-reactivate-student: Reactivate a student). This is distinct from deletion (UC-STU-delete-student: Delete a student), which is a physical, unrecoverable delete. The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
+- Honors FR-SEC-active-account: the loss of access takes effect at once, not when the student's current token expires.
 
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-reactivate-student: Reactivate a student
 **Assumptions:**
