@@ -36,6 +36,7 @@ These business rules apply across Project Pulse. The course-administration rules
 # **Teams and Instructor Assignment**
 
 - **BR-team-single-instructor:** Each team is assigned a single instructor — its TCU instructor; an instructor may be assigned to multiple teams.
+- **BR-deactivation-retains-team:** Deactivating a student does not remove her from her team; she stays assigned to it while deactivated, and a course admin or instructor may still reassign or remove her. On reactivation she is on whatever team she is assigned to at that time.
 
 # **Weekly Activity Report and Peer Evaluation**
 
