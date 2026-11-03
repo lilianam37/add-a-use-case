@@ -116,13 +116,13 @@ sequenceDiagram
         SC->>M: authorize(studentId)
         alt not instructor of her course section and not admin of her course (ext. 6a)
             M-->>V: 403
-            V-->>I: "not permitted"
+            V-->>I: request.ts routes to the Forbidden page (every 403 does)
         else permitted
             M->>SS: deactivateStudent(studentId)
             SS->>DB: findById(studentId)
             alt already deactivated (ext. 3a, stale page)
-                SS-->>V: 409 StudentAlreadyDeactivatedException
-                V-->>I: "already deactivated", refresh list
+                SS-->>V: 409 Result(false, CONFLICT, "This student is already deactivated.")
+                V-->>I: request.ts toasts the message; Students.vue reloads the list
             else active
                 SS->>DB: save enabled = false (team untouched, BR-deactivation-retains-team)
                 SS-->>V: Result 200 + StudentDto (enabled = false)
@@ -171,6 +171,23 @@ sequenceDiagram
 | Every authenticated API request (changed, trunk) | Any bearer token | — | Unchanged | Adds `401` when the token's account is missing or deactivated (FR-SEC-active-account) |
 
 The PATCH route rule must sit above the `.denyAll()` catch-all in `SecurityConfiguration`. `/implement` reads the exact evaluation and report paths off `EvaluationController`.
+
+## Implementation notes
+
+These pin down points the questions test found underspecified.
+
+- **How 6a and 3a reach the user.** The shared Axios instance (`frontend/src/utils/request.ts`) sends every `403` to the Forbidden page and toasts every other error's `Result.message`. Both extensions use that path unchanged:
+  - **6a:** the Forbidden page is how she is told she is not permitted.
+  - **3a:** the toast reads "This student is already deactivated." `StudentAlreadyDeactivatedException` maps to HTTP `409` with `StatusCode.CONFLICT`. Students.vue catches the rejected call and reloads the list, so the stale row disappears.
+  - 6a is reached only by a stale page or a hand-made request, because UC-STU-find-students already shows an instructor only her own course section's students.
+- **Step 4 dialog text.** The dialog states the consequences listed in the use case's Associated Information, in order: she can no longer log in or submit weekly activity reports and peer evaluations; her account and submitted work are kept; she is not removed; she can be reactivated later; and this is not deletion. "Can be reactivated later" describes the specified product (UC-STU-reactivate-student), and OI-65 tracks the interim gap. The dialog shows the student's name.
+- **Route guard.** `StudentLifecycleAuthorizationManager` first requires `ROLE_instructor`, which every course admin also carries. It then ORs the two scope checks. `isCurrentUserAdminOfStudentCourse` compares the caller's `userId` with `student.section.course.courseAdmin.id`. `Student.section` is mandatory, and a missing student returns `false`.
+- **Per-request account check.** `ActiveAccountJwtAuthenticationConverter` wraps the existing `jwtAuthenticationConverter` bean (claim `authorities`, empty prefix, `SecurityConfiguration.jwtAuthenticationConverter`), so authorities are mapped exactly as today. It is registered through `.oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(…)))`. The `userId` claim is the numeric id `JwtProvider` writes. A missing claim, a non-numeric claim, a missing account, or a disabled account each throw `DisabledException`, an `AuthenticationException`, which becomes `401`. Nothing else may escape. The check also runs when a stale token is sent to a `permitAll` route, as the resource server does by default. The SPA's `401` handler clears the token.
+- **No other writer of `enabled`.** After this change, only `StudentService.deactivateStudent` and the instructor service write a student's flag. `updateStudent` copies only username, first name, last name and email onto the stored entity. `StudentDtoToStudentConverter` may keep reading `enabled`; it is just ignored. No `/users` endpoint writes it.
+- **Who owes evaluations.** `SubmissionStatusService.findOwedItems` already builds each team's teammate set from active students only (BR-submission-owed), so a deactivated teammate is owed by nobody. No change is needed.
+- **Peer evaluation refusal.** The evaluatee-active check runs after the existing team-assignment and same-team checks. Its message is "You cannot evaluate <first name> <last name>: her account is deactivated." Each evaluation is its own request, as today. A refused one saves nothing, and the others in the form are unaffected.
+- **Report inclusion.** A deactivated student is included for a week when at least one `PeerEvaluation` names her as the evaluatee for that week. Evaluations she wrote don't count. `SectionsEvaluations.vue` shows an `el-tag` reading "Deactivated" beside her name.
+- **Seed data and tests.** Integration tests rely on the base class's transactional rollback, so a deactivation doesn't leak into other tests. Missing actors are added to `DataInitializer`: a course admin who isn't assigned to the student's course section, the admin of a second course, and an instructor of another course section. The instructor live-token test deactivates the instructor through the repository, since no instructor endpoint exists yet.
 
 ## Key decisions
 
