@@ -52,6 +52,7 @@ export interface PeerEvaluationAverage {
   publicComments: string[]
   privateComments: string[]
   ratingAverages: RatingAverage[]
+  deactivated: boolean // True for a deactivated student, who appears only for a week she was evaluated (BR-evaluatee-active)
 }
 
 export interface RatingAverage {

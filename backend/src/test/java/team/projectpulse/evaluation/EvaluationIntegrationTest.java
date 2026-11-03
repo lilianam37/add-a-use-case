@@ -3,6 +3,8 @@ package team.projectpulse.evaluation;
 import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import team.projectpulse.student.Student;
+import team.projectpulse.student.StudentRepository;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.evaluation.dto.PeerEvaluationDto;
 import team.projectpulse.evaluation.dto.RatingDto;
@@ -33,6 +35,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Evaluation API endpoints")
 public class EvaluationIntegrationTest extends AbstractIntegrationTest {
@@ -55,6 +58,9 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     PeerEvaluationRepository evaluationRepository;
+
+    @Autowired
+    StudentRepository studentRepository;
 
     @Autowired
     EntityManager entityManager;
@@ -787,6 +793,79 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.flag").value(false))
                 .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
                 .andExpect(jsonPath("$.message").value("The ratings are not valid. Please make sure all criteria in the rubric are rated and each criterion is rated only once."));
+    }
+
+    // BR-evaluatee-active (UC-STU-deactivate-student's consequence for peer evaluations). The student is deactivated
+    // through the repository inside the test's rolled-back transaction.
+
+    private void deactivate(Integer studentId) {
+        Student student = this.studentRepository.findById(studentId).orElseThrow();
+        student.setEnabled(false);
+        this.studentRepository.saveAndFlush(student);
+    }
+
+    private static List<RatingDto> sixRatings(Integer firstRatingId) {
+        return List.of(
+                new RatingDto(firstRatingId == null ? null : firstRatingId, 1, 4.0),
+                new RatingDto(firstRatingId == null ? null : firstRatingId + 1, 2, 9.0),
+                new RatingDto(firstRatingId == null ? null : firstRatingId + 2, 3, 7.0),
+                new RatingDto(firstRatingId == null ? null : firstRatingId + 3, 4, 10.0),
+                new RatingDto(firstRatingId == null ? null : firstRatingId + 4, 5, 5.0),
+                new RatingDto(firstRatingId == null ? null : firstRatingId + 5, 6, 6.0));
+    }
+
+    private void fixClockAtAugust8() {
+        // Aug 8, 2023 falls in 2023-W32, which makes 2023-W31 the previous week and its window open
+        Clock fixedClock = Clock.fixed(LocalDate.of(2023, 8, 8).atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
+    }
+
+    @Test
+    void testStudentJohnAddEvaluationOfDeactivatedTeammate() throws Exception {
+        fixClockAtAugust8();
+        deactivate(6); // Jerry, John's teammate on Team1
+        long evaluationsBefore = this.evaluationRepository.count();
+
+        PeerEvaluationDto peerEvaluationDto = new PeerEvaluationDto(null, "2023-W31", 4, "John Smith", 6, "Jerry Moon", sixRatings(null), 41.0, "Good job", "Keep it up", null, null);
+
+        this.mockMvc.perform(post(this.baseUrl + "/evaluations").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(peerEvaluationDto)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("You cannot evaluate Jerry Moon: their account is deactivated."));
+
+        assertThat(this.evaluationRepository.count()).isEqualTo(evaluationsBefore);
+    }
+
+    @Test
+    void testEvaluatorJohnEditsEvaluationOfDeactivatedTeammate() throws Exception {
+        fixClockAtAugust8();
+        deactivate(5); // Eric, the evaluatee of John's evaluation 1
+        String publicCommentBefore = this.evaluationRepository.findById(1).orElseThrow().getPublicComment();
+
+        PeerEvaluationDto peerEvaluationDto = new PeerEvaluationDto(1, "2023-W31", 4, "John Smith", 5, "Eric Hudson", sixRatings(1), 41.0, "Rewritten", "Rewritten", null, null);
+
+        this.mockMvc.perform(put(this.baseUrl + "/evaluations/1").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(peerEvaluationDto)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(StatusCode.INVALID_ARGUMENT))
+                .andExpect(jsonPath("$.message").value("You cannot evaluate Eric Hudson: their account is deactivated."));
+
+        this.entityManager.clear();
+        assertThat(this.evaluationRepository.findById(1).orElseThrow().getPublicComment()).isEqualTo(publicCommentBefore);
+    }
+
+    @Test
+    void testAdminBingyangReportListsDeactivatedStudentForAWeekSheWasEvaluated() throws Exception {
+        deactivate(5); // Eric was evaluated in 2023-W31
+
+        this.mockMvc.perform(get(this.baseUrl + "/evaluations/sections/2/week/2023-W31").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.adminBingyangToken))
+                .andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
+                .andExpect(jsonPath("$.data.peerEvaluationAverages", Matchers.hasSize(11)))
+                .andExpect(jsonPath("$.data.peerEvaluationAverages[?(@.studentId == 5)].deactivated").value(Matchers.contains(true)))
+                .andExpect(jsonPath("$.data.peerEvaluationAverages[?(@.deactivated == true)]", Matchers.hasSize(1)));
     }
 
 }

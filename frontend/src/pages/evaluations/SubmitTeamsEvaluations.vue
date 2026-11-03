@@ -182,7 +182,8 @@ onMounted(async () => {
 async function loadStudents() {
   // On the back end, the page number starts from 0, so subtract 1 here
   const result: FindStudentByTeamIdResponse = await findStudentsByTeamId(teamId.value)
-  students.value = result.data
+  // Ask only for active teammates (UC-EVA-submit-evaluation step 2); the server refuses a deactivated one anyway (BR-evaluatee-active)
+  students.value = result.data.filter((student) => student.enabled !== false)
 }
 
 // Load criteria information
