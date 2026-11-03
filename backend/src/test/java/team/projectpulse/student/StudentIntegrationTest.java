@@ -437,9 +437,13 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
         studentDto.put("enabled", false);
 
         this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(studentDto)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.flag").value(true))
                 .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
                 .andExpect(jsonPath("$.data.enabled").value(true));
+
+        // The stored flag, not just the response body, is unchanged
+        assertThat(this.studentRepository.findById(4).orElseThrow().isEnabled()).isTrue();
     }
 
 }
