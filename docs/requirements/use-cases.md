@@ -1474,6 +1474,10 @@ Details:
 7. Use case ends.
 
 **Extensions:**
+- 3a. The student is already deactivated:
+  - 3a1. The system does not offer the choice to deactivate this student. If the course admin or instructor requests it anyway (for example from an out-of-date page), the system tells her the student is already deactivated and changes nothing.
+  - 3a2. Use case ends.
+
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle
