@@ -302,7 +302,9 @@ sequenceDiagram
     API-->>SPA: Result { token: JWT (RSA-2048, 2h) }
     SPA->>SPA: store token (Pinia), set Bearer header
     SPA->>API: GET /api/v1/... (Bearer JWT)
-    API->>API: verify JWT, then AuthorizationManager (ownership/membership)
+    API->>API: verify JWT
+    API->>DB: load account by userId, refuse if deactivated (401)
+    API->>API: AuthorizationManager (ownership/membership)
     API-->>SPA: Result { data }
 ```
 
@@ -430,8 +432,9 @@ Single-tenant (`CO-single-tenant`): one deployment serves one institution. The t
 
 - **Login:** HTTP Basic (email + password) → server issues a JWT (`AuthController` / `JwtProvider`). Passwords hashed with **BCrypt (strength 12)**.
 - **Tokens:** self-issued JWTs, **RSA-2048** signature, **2-hour** expiry, claims `sub`, `userId`, space-delimited `authorities`. Stateless OAuth2 resource server (`SessionCreationPolicy.STATELESS`).
+- **Active-account check on every request:** after the signature and expiry checks, the JWT authentication converter loads the account named by the token's `userId` claim and refuses it with `401` when the account is missing or deactivated (FR-SEC-active-account). So deactivating a student or instructor takes effect on her next request, not when her token expires. It costs one primary-key read per authenticated request. Designed in [stu.md](stu.md); not yet built.
 - **Provisioning:** invitation-gated registration (`user/userinvitation` — `validateUserInvitation` rejects any sign-up without a matching course-admin-issued invitation; see Known gaps); password reset via a one-time token valid **5 minutes**.
-- **Known gaps:** no token **refresh** or **revocation/blocklist** — a token is valid for its full 2h (a leaked token can't be revoked; logout is client-side only). The RSA key regenerates per startup (KD-self-issued-jwt). **`POST /students` and `POST /instructors` are `permitAll()` at the security-filter level, but registration is gated in the service layer**: both paths call `validateUserInvitation`, which rejects any registration lacking a course-admin-issued, single-use invitation whose email, token, role, course, and section all match (invitations are created via UC-STU-invite-students / UC-INS-invite-instructors). So account creation is **not** open self-registration — a stranger cannot self-provision, and an instructor account requires an *instructor* invitation. The residual concern is defense-in-depth: the only gate is service-layer (there is no filter-chain authorization rule), and the endpoint is unauthenticated and unthrottled (rate limiting is [TD-auth-rate-limit](#risks-and-technical-debt)).
+- **Known gaps:** no token **refresh** or general **revocation/blocklist** — apart from the active-account check above, a token is valid for its full 2h (a leaked token of an active account can't be revoked; logout is client-side only). The RSA key regenerates per startup (KD-self-issued-jwt). **`POST /students` and `POST /instructors` are `permitAll()` at the security-filter level, but registration is gated in the service layer**: both paths call `validateUserInvitation`, which rejects any registration lacking a course-admin-issued, single-use invitation whose email, token, role, course, and section all match (invitations are created via UC-STU-invite-students / UC-INS-invite-instructors). So account creation is **not** open self-registration — a stranger cannot self-provision, and an instructor account requires an *instructor* invitation. The residual concern is defense-in-depth: the only gate is service-layer (there is no filter-chain authorization rule), and the endpoint is unauthenticated and unthrottled (rate limiting is [TD-auth-rate-limit](#risks-and-technical-debt)).
 
 #### **Authorization**
 
