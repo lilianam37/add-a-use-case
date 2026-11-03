@@ -1,5 +1,6 @@
 package team.projectpulse.student;
 
+import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.system.StatusCode;
@@ -50,6 +51,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     SectionRepository sectionRepository;
+
+    @Autowired
+    EntityManager entityManager;
 
     String adminToken;
 
@@ -442,7 +446,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
                 .andExpect(jsonPath("$.data.enabled").value(true));
 
-        // The stored flag, not just the response body, is unchanged
+        // The stored flag, not just the response body, is unchanged: flush the update, then drop the cached entity
+        this.entityManager.flush();
+        this.entityManager.clear();
         assertThat(this.studentRepository.findById(4).orElseThrow().isEnabled()).isTrue();
     }
 
