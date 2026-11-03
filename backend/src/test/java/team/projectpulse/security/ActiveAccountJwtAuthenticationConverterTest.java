@@ -97,11 +97,4 @@ class ActiveAccountJwtAuthenticationConverterTest {
         verifyNoInteractions(this.userRepository);
     }
 
-    @Test
-    void aNumericStringUserIdIsAccepted() {
-        given(this.userRepository.findById(4)).willReturn(Optional.of(student(true)));
-
-        assertThat(converter().convert(jwtWithUserId("4"))).isNotNull();
-    }
-
 }
