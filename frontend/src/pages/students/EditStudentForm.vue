@@ -13,15 +13,6 @@
     <el-form-item label="Username:" prop="username">
       <el-input v-model="studentBeingEdited.username"></el-input>
     </el-form-item>
-    <el-form-item label="Status:" prop="enabled">
-      <el-switch
-        v-model="studentBeingEdited.enabled"
-        inline-prompt
-        active-text="Enabled"
-        inactive-text="Disabled"
-        style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
-      />
-    </el-form-item>
     <el-form-item label="First Name:" prop="firstName">
       <el-input v-model="studentBeingEdited.firstName"></el-input>
     </el-form-item>
@@ -56,7 +47,6 @@ const studentBeingEdited = ref<Student>({
   // Data of the user being added or edited
   id: NaN,
   username: '',
-  enabled: false,
   firstName: '',
   lastName: '',
   email: ''
@@ -74,7 +64,6 @@ const rules = {
       trigger: 'blur'
     }
   ],
-  enabled: [{ required: true, message: 'Please select the status of the user.', trigger: 'blur' }],
   firstName: [
     { required: true, message: 'Please provide the first name of the user.', trigger: 'blur' }
   ],
@@ -93,7 +82,6 @@ async function loadStudent(studentId: number) {
 
   studentBeingEdited.value.id = result.data.id as number
   studentBeingEdited.value.username = result.data.username
-  studentBeingEdited.value.enabled = result.data.enabled
   studentBeingEdited.value.firstName = result.data.firstName
   studentBeingEdited.value.lastName = result.data.lastName
   studentBeingEdited.value.email = result.data.email
@@ -110,7 +98,6 @@ async function updateExistingStudent() {
   const updatedStudent: Student = {
     id: studentBeingEdited.value.id,
     username: studentBeingEdited.value.username,
-    enabled: studentBeingEdited.value.enabled,
     firstName: studentBeingEdited.value.firstName,
     lastName: studentBeingEdited.value.lastName,
     email: studentBeingEdited.value.email

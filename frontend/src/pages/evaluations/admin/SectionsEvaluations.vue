@@ -32,7 +32,11 @@
       scrollbar-always-on
     >
       <el-table-column label="Student" min-width="100px" fixed>
-        <template #default="{ row }"> {{ row.lastName }}, {{ row.firstName }} </template>
+        <template #default="{ row }">
+          {{ row.lastName }}, {{ row.firstName }}
+          <!-- Listed only for a week she was evaluated (BR-evaluatee-active) -->
+          <el-tag v-if="row.deactivated" type="info" size="small">Deactivated</el-tag>
+        </template>
       </el-table-column>
       <el-table-column label="Average Total Score" min-width="100px" fixed>
         <template #default="{ row }">

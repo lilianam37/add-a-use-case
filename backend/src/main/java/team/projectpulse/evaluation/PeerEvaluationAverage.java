@@ -14,6 +14,7 @@ public class PeerEvaluationAverage {
     private List<String> publicComments;
     private List<String> privateComments;
     private List<RatingAverage> ratingAverages;
+    private boolean deactivated; // true when the student's account is deactivated (BR-evaluatee-active); set only by the course section report
 
 
     public PeerEvaluationAverage() {
@@ -97,6 +98,14 @@ public class PeerEvaluationAverage {
 
     public void setRatingAverages(List<RatingAverage> ratingAverages) {
         this.ratingAverages = ratingAverages;
+    }
+
+    public boolean isDeactivated() {
+        return deactivated;
+    }
+
+    public void setDeactivated(boolean deactivated) {
+        this.deactivated = deactivated;
     }
 
 }

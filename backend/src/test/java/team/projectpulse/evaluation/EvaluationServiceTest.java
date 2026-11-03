@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationServiceTest {
@@ -671,6 +672,82 @@ class EvaluationServiceTest {
         assertThat(peerEvaluations.get(2).getEvaluator().getId()).isEqualTo(5);
         assertThat(peerEvaluations.get(2).getWeek()).isEqualTo("2023-W31");
         assertThat(peerEvaluations.get(2).getTotalScore()).isCloseTo(49.0, within(0.01));
+    }
+
+    // BR-evaluatee-active (UC-STU-deactivate-student's consequence for peer evaluations)
+
+    private void fixClockAt(LocalDate date) {
+        Clock fixedClock = Clock.fixed(date.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
+    }
+
+    @Test
+    void testAddPeerEvaluationOfDeactivatedEvaluatee() {
+        // Given: the previous week, 2023-W31, is open
+        fixClockAt(LocalDate.of(2023, 8, 13));
+        this.woody.setEnabled(false);
+        PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", this.amanda, this.woody, List.of(), "public comment", "private comment");
+
+        // When and then
+        assertThatThrownBy(() -> this.evaluationService.addPeerEvaluation(newPeerEvaluation))
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("You cannot evaluate Woody Allen: their account is deactivated.");
+        verify(this.evaluationRepository, never()).save(any(PeerEvaluation.class));
+    }
+
+    @Test
+    void testUpdatePeerEvaluationOfDeactivatedEvaluatee() {
+        // Given: 2023-W31's window is open
+        fixClockAt(LocalDate.of(2023, 8, 8));
+        PeerEvaluation oldPeerEvaluation = new PeerEvaluation("2023-W31", this.john, this.eric, List.of(), "public comment", "private comment");
+        oldPeerEvaluation.setPeerEvaluationId(1);
+        this.eric.setEnabled(false);
+        PeerEvaluation update = new PeerEvaluation("2023-W31", this.john, this.john, List.of(), "new public comment", "new private comment");
+        given(this.evaluationRepository.findById(1)).willReturn(Optional.of(oldPeerEvaluation));
+
+        // When and then: the stored evaluatee decides, not the one in the request
+        assertThatThrownBy(() -> this.evaluationService.updatePeerEvaluation(1, update))
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("You cannot evaluate Eric Wong: their account is deactivated.");
+        assertThat(oldPeerEvaluation.getPublicComment()).isEqualTo("public comment");
+        verify(this.evaluationRepository, never()).save(any(PeerEvaluation.class));
+    }
+
+    @Test
+    void testReportListsDeactivatedStudentForAWeekSheWasEvaluated() {
+        // Given
+        this.eric.setEnabled(false);
+        given(this.sectionRepository.findById(anyInt())).willReturn(Optional.of(new Section("2023-2024", LocalDate.of(2023, 8, 14), LocalDate.of(2024, 4, 29), true, DayOfWeek.MONDAY, LocalTime.of(23, 59), DayOfWeek.TUESDAY, LocalTime.of(23, 59))));
+        given(this.studentRepository.findBySectionSectionId(anyInt())).willReturn(this.students);
+        given(this.evaluationRepository.findByWeekAndEvaluateeId(anyString(), anyInt())).willReturn(List.of());
+        given(this.evaluationRepository.findByWeekAndEvaluateeId("2023-W31", 4)).willReturn(this.ericsW31Evaluations);
+
+        // When
+        WeeklyPeerEvaluationReport report = this.evaluationService.generateWeeklyPeerEvaluationReportForSection(2, "2023-W31");
+
+        // Then
+        assertThat(report.getPeerEvaluationAverages()).hasSize(5);
+        assertThat(report.getPeerEvaluationAverages())
+                .filteredOn(PeerEvaluationAverage::isDeactivated)
+                .extracting(PeerEvaluationAverage::getStudentId)
+                .containsExactly(4);
+    }
+
+    @Test
+    void testReportOmitsDeactivatedStudentForAWeekSheWasNotEvaluated() {
+        // Given: nobody evaluated Eric in 2023-W35 (the repository mock returns an empty list)
+        this.eric.setEnabled(false);
+        given(this.sectionRepository.findById(anyInt())).willReturn(Optional.of(new Section("2023-2024", LocalDate.of(2023, 8, 14), LocalDate.of(2024, 4, 29), true, DayOfWeek.MONDAY, LocalTime.of(23, 59), DayOfWeek.TUESDAY, LocalTime.of(23, 59))));
+        given(this.studentRepository.findBySectionSectionId(anyInt())).willReturn(this.students);
+
+        // When
+        WeeklyPeerEvaluationReport report = this.evaluationService.generateWeeklyPeerEvaluationReportForSection(2, "2023-W35");
+
+        // Then: the active students are listed even with no evaluations, Eric is not
+        assertThat(report.getPeerEvaluationAverages()).hasSize(4);
+        assertThat(report.getPeerEvaluationAverages()).extracting(PeerEvaluationAverage::getStudentId).doesNotContain(4);
+        assertThat(report.getPeerEvaluationAverages()).noneMatch(PeerEvaluationAverage::isDeactivated);
     }
 
 }

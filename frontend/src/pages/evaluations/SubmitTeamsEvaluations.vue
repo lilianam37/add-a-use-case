@@ -182,7 +182,8 @@ onMounted(async () => {
 async function loadStudents() {
   // On the back end, the page number starts from 0, so subtract 1 here
   const result: FindStudentByTeamIdResponse = await findStudentsByTeamId(teamId.value)
-  students.value = result.data
+  // Ask only for active teammates (UC-EVA-submit-evaluation step 2); the server refuses a deactivated one anyway (BR-evaluatee-active)
+  students.value = result.data.filter((student) => student.enabled !== false)
 }
 
 // Load criteria information
@@ -204,7 +205,12 @@ async function prepareStartingPeerEvaluations() {
 
   // If the student has already submitted evaluations for the current week, load them
   if (result.data.length > 0) {
-    peerEvalutions.value = result.data
+    // Keep only the evaluations of teammates who are still active: one of a teammate deactivated since it was saved
+    // can no longer be edited (BR-evaluatee-active), and re-sending it would fail the whole update
+    const activeTeammateIds = new Set(students.value.map((student) => student.id))
+    peerEvalutions.value = result.data.filter((evaluation) =>
+      activeTeammateIds.has(evaluation.evaluateeId)
+    )
     isNewSubmission = false
   } else {
     // If not, create a new set of evaluations
@@ -253,9 +259,14 @@ async function updatePeerEvaluations() {
     })
 
     isLoading.value = true
-    peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
+    try {
+      peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
+    } catch {
+      return // request.ts has already shown why a save failed
+    } finally {
+      isLoading.value = false
+    }
     ElMessage.success('Peer evaluations updated successfully')
-    isLoading.value = false
   }
 }
 </script>
